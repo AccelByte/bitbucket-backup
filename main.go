@@ -58,7 +58,7 @@ func GetAccessToken(clientID string, clientSecret string, grantUrl string) (stri
 	req.SetBasicAuth(clientID, clientSecret)
 
 	resp, err := client.Do(req)
-	if err != nil {
+	if err != nil || resp.StatusCode != http.StatusOK {
 		return "", errors.New("request failed: " + err.Error())
 	}
 	body, err := ioutil.ReadAll(resp.Body)
@@ -134,12 +134,13 @@ func main() {
 		req, err := http.NewRequest(http.MethodGet, NextPage, nil)
 		req.Header.Add("Authorization", "Bearer "+token)
 		resp, err := client.Do(req)
-		if err != nil {
-			panic("request failed")
+		if err != nil || resp.StatusCode != http.StatusOK {
+			logrus.Fatal("Unable to get repository list: err=", err, " resp=", resp)
 		}
 
 		var pagedRepos BitbucketPaginated
 		body, err := ioutil.ReadAll(resp.Body)
+		logrus.Debug("Repository Page: ", string(body))
 		json.Unmarshal(body, &pagedRepos)
 		for _, repo := range pagedRepos.Values {
 			repoNames = append(repoNames, repo.Name)
@@ -147,19 +148,23 @@ func main() {
 		NextPage = pagedRepos.Next
 	}
 
-	// Clean up previous stale runs
-	for _, delete := range repoNames {
-		os.Remove(delete + ".bundle")
-		os.RemoveAll(delete)
-	}
-
 	repoCount := len(repoNames)
 	repoBackupOKCount := 0
 	repoBackupUnchanged := 0
 
 	logrus.Info("Team: ", team)
-	logrus.Info("Repo Count: ", len(repoNames))
+	logrus.Info("Repo Count: ", repoCount)
 	logrus.Info("Repo Names: ", repoNames)
+
+	if repoCount < 1 {
+		logrus.Fatal("No repositories found to backup")
+	}
+
+	// Clean up previous stale runs
+	for _, delete := range repoNames {
+		os.Remove(delete + ".bundle")
+		os.RemoveAll(delete)
+	}
 
 	// Backup repos
 	for _, name := range repoNames {
